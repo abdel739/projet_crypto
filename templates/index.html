@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JAHJAH SECURITY </title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="app">
+        <section id="auth-section">
+            <h1>🔐 JAHJAH SECURITY </h1>
+            <div class="card">
+                <div class="tabs">
+                    <button onclick="showTab('login')">Connexion</button>
+                    <button onclick="showTab('register')">Inscription</button>
+                </div>
+                
+                <form id="login-form">
+                    <input type="text" placeholder="Nom d'utilisateur" required>
+                    <input type="password" placeholder="Mot de passe" required>
+                    <button type="submit" class="btn-primary">Se connecter</button>
+                </form>
+
+                <form id="register-form" class="hidden">
+                    <input type="text" placeholder="Choisir un login" required>
+                    <input type="password" placeholder="Mot de passe robuste" required>
+                    <button type="submit" class="btn-success">Créer mon compte sécurisé</button>
+                </form>
+            </div>
+        </section>
+
+        <section id="dashboard-section" class="hidden">
+            <header>
+                <h2>Bienvenue, <span id="user-display">Alice</span></h2>
+                <button onclick="logout()" class="btn-danger">Déconnexion</button>
+            </header>
+
+            <div class="upload-zone card">
+                <h3> Déposer un fichier</h3>
+                <input type="file" id="file-input">
+                <p class="hint">Le fichier sera chiffré en AES-256 avant l'envoi.</p>
+                <button onclick="uploadFile()" class="btn-primary">Chiffrer et Envoyer</button>
+            </div>
+
+            <div class="files-list card">
+                <h3> Mes fichiers sécurisés</h3>
+                <table id="files-table">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+            </div>
+
+            <div class="files-list card">
+                <h3> Fichiers partagés avec moi</h3>
+                <table id="shared-files-table">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Propriétaire</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
