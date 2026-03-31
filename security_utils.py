@@ -31,9 +31,15 @@ class SecurityUtils:
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
+
+        # On transforme la clé privée en format PEM (texte) pour la stocker en base
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
         
-        # On retourne la clé privée (objet) et la clé publique (bytes pour la BDD)
-        return private_key, public_pem
+        return private_pem, public_pem
 
     @staticmethod
     def generate_aes_key():
@@ -64,6 +70,11 @@ class SecurityUtils:
     @staticmethod
     def decrypt_file_aes(encrypted_data, key, iv):
         """Déchiffre des données avec AES-256-CBC"""
+        if isinstance(key, memoryview):
+            key = key.tobytes()
+        if isinstance(iv, memoryview):
+            iv = iv.tobytes()
+
         cipher = Cipher(
             algorithms.AES(key),
             modes.CBC(iv),
@@ -80,6 +91,11 @@ class SecurityUtils:
     @staticmethod
     def encrypt_with_rsa_public(data, public_key_pem):
         """Chiffre des données avec une clé publique RSA"""
+        if isinstance(public_key_pem, memoryview):
+            public_key_pem = public_key_pem.tobytes()
+        if isinstance(data, memoryview):
+            data = data.tobytes()
+
         public_key = serialization.load_pem_public_key(
             public_key_pem,
             backend=default_backend()
@@ -99,8 +115,14 @@ class SecurityUtils:
     @staticmethod
     def decrypt_with_rsa_private(encrypted_data, private_key_pem):
         """Déchiffre des données avec une clé privée RSA"""
+        pem_bytes = private_key_pem
+        if isinstance(private_key_pem, str):
+            pem_bytes = private_key_pem.encode()
+        elif isinstance(private_key_pem, memoryview):
+            pem_bytes = private_key_pem.tobytes()
+
         private_key = serialization.load_pem_private_key(
-            private_key_pem.encode(),
+            pem_bytes,
             password=None,
             backend=default_backend()
         )

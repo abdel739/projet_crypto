@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS Utilisateur (
     password_hash BYTEA NOT NULL,
     sel BYTEA NOT NULL,
     cle_publique_pem BYTEA NOT NULL,
+    cle_privee_pem BYTEA NOT NULL,
     date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -15,9 +15,9 @@ app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY') or secrets.token_hex(32)
 
 app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '0') == '1'
+    SESSION_COOKIE_HTTPONLY=True, #Empêche le JavaScript malveillant d'accéder au cookie de session. Cela protège contre les attaques XSS (Cross-Site Scripting).
+    SESSION_COOKIE_SAMESITE='Lax',#Empêche l'envoi du cookie lors de requêtes venant d'autres sites. Cela protège contre les attaques CSRF (Cross-Site Request Forgery).
+    SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '0') == '1'#Si activé (à 1), le cookie ne circule que si la connexion est en HTTPS. En développement local (localhost), on le laisse souvent à 0.
 )
 
 allowed_origins = [
@@ -44,7 +44,9 @@ def allowed_file(filename):
 def index():
     return render_template('index.html')
 
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/register', methods=['POST'])#création d'un compte utilisateur avec un login et un mot de passe. 
+#Le mot de passe est haché avec un sel avant d'être stocké en base de données.'
+# Une paire de clés RSA est également générée pour l'utilisateur.
 def register():
     try:
         data = request.get_json(silent=True) or {}
@@ -62,21 +64,47 @@ def register():
         if existing_user:
             return jsonify({'success': False, 'message': 'Ce login est dÃ©jÃ  utilisÃ©'}), 400
         
+        print(f"Début inscription pour {login}")
+        
         # Hachage du mot de passe
         pwd_hash, salt = secu.hash_password(password)
+        print(f"Mot de passe hashé pour {login}")
         
-        # GÃ©nÃ©ration des clÃ©s RSA
-        _, public_pem = secu.generate_rsa_keys()
+        # Génération des clés RSA (clé privée + clé publique)
+        private_pem, public_pem = secu.generate_rsa_keys()
+        print(f"Clés RSA générées pour {login}")
         
-        # Insertion dans la base de donnÃ©es
+        # Vérifier que la colonne cle_privee_pem existe
+        check_column_query = """
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'utilisateur' AND column_name = 'cle_privee_pem';
+        """
+        column_exists = db.execute_query(check_column_query)
+        if not column_exists:
+            print(f"Colonne cle_privee_pem manquante pour {login}, tentative d'ajout automatique")
+            alter_query = "ALTER TABLE Utilisateur ADD COLUMN cle_privee_pem BYTEA;"
+            alter_success = db.execute_action(alter_query)
+            if alter_success:
+                print(f"Colonne ajoutée automatiquement pour {login}")
+            else:
+                print(f"Échec ajout colonne pour {login}")
+                return jsonify({'success': False, 'message': 'Impossible d\'ajouter la colonne cle_privee_pem. Vérifiez les permissions DB.'}), 500
+            
+            # Re-vérifier
+            column_exists = db.execute_query(check_column_query)
+            if not column_exists:
+                return jsonify({'success': False, 'message': 'Colonne cle_privee_pem toujours manquante après ajout.'}), 500
+        
+        # Insertion dans la base de données
         query = """
-        INSERT INTO Utilisateur (login, password_hash, sel, cle_publique_pem)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO Utilisateur (login, password_hash, sel, cle_publique_pem, cle_privee_pem)
+        VALUES (%s, %s, %s, %s, %s)
         RETURNING id_user;
         """
         
-        params = (login, pwd_hash, salt, public_pem)
+        params = (login, pwd_hash, salt, public_pem, private_pem)
         result = db.execute_query(query, params)
+        print(f"Résultat insert pour {login}: {result}")
         
         if result:
             user_id = result[0][0]
@@ -84,18 +112,20 @@ def register():
             session['user_id'] = user_id
             session['login'] = login
             
+            print(f"Inscription réussie pour {login}, id: {user_id}")
             return jsonify({
                 'success': True, 
-                'message': 'Inscription rÃ©ussie',
+                'message': 'Inscription réussie',
                 'user': {'id': user_id, 'login': login}
             })
         else:
+            print(f"Échec insert pour {login}, vérifiez la base de données (colonne cle_privee_pem manquante ?)")
             return jsonify({'success': False, 'message': 'Erreur lors de l\'inscription'}), 500
             
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erreur: {str(e)}'}), 500
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])#connexion d'un utilisateur en vérifiant le login et le mot de passe. Le mot de passe fourni est haché avec le même sel que celui stocké en base, et comparé au hachage stocké. Si la connexion est réussie, l'état de session est mis à jour.
 def login():
     try:
         data = request.get_json(silent=True) or {}
@@ -346,9 +376,12 @@ def share_file():
         if file_result[0][0] != session['user_id']:
             return jsonify({'success': False, 'message': 'Acces non autorise'}), 403
         
-        # RÃ©cupÃ©rer l'ID du destinataire
+        # Récupérer l'ID du destinataire
         recipient_query = "SELECT id_user, cle_publique_pem FROM Utilisateur WHERE login = %s;"
         recipient_result = db.execute_query(recipient_query, (recipient_login,))
+
+        if recipient_result and recipient_result[0][0] == session['user_id']:
+            return jsonify({'success': False, 'message': 'Impossible de partager un fichier avec soi-même'}), 400
         
         if not recipient_result:
             return jsonify({'success': False, 'message': 'Utilisateur destinataire non trouvÃ©'}), 404
@@ -389,7 +422,7 @@ def share_file():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erreur: {str(e)}'}), 500
 
-@app.route('/api/shared-files', methods=['GET'])
+@app.route('/api/shared-files', methods=['GET'])#partage de fichier 
 def get_shared_files():
     try:
         if 'user_id' not in session:
@@ -436,9 +469,10 @@ def download_shared_file(file_id):
         secu = SecurityUtils()
 
         query = """
-        SELECT f.nom_original, f.nom_stockage, f.cle_chiffrement_aes, f.iv_chiffrement
+        SELECT f.nom_original, f.nom_stockage, f.iv_chiffrement, p.cle_chiffrement_partage, u.cle_privee_pem
         FROM Partage p
         JOIN Fichier f ON p.id_fichier = f.id_fichier
+        JOIN Utilisateur u ON u.id_user = p.id_destinataire
         WHERE p.id_fichier = %s AND p.id_destinataire = %s;
         """
         result = db.execute_query(query, (file_id, session['user_id']))
@@ -454,7 +488,12 @@ def download_shared_file(file_id):
         with open(encrypted_file_path, 'rb') as f:
             encrypted_data = f.read()
 
-        decrypted_data = secu.decrypt_file_aes(encrypted_data, file_info[2], file_info[3])
+        # Déchiffrement de la clé AES échangée via RSA
+        shared_encrypted_aes = file_info[3]
+        recipient_private_pem = file_info[4]
+        aes_key = secu.decrypt_with_rsa_private(shared_encrypted_aes, recipient_private_pem)
+
+        decrypted_data = secu.decrypt_file_aes(encrypted_data, aes_key, file_info[2])
 
         return send_file(
             io.BytesIO(decrypted_data),
